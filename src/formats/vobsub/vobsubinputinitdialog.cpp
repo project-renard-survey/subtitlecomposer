@@ -1,6 +1,3 @@
-#ifndef INPUTFORMAT_H
-#define INPUTFORMAT_H
-
 /**
  * Copyright (C) 2007-2009 Sergio Pistone <sergio_pistone@yahoo.com.ar>
  * Copyright (C) 2010-2017 Mladen Milinkovic <max@smoothware.net>
@@ -21,37 +18,37 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#include "format.h"
+#include "vobsubinputinitdialog.h"
+#include "ui_vobsubinputinitdialog.h"
 
-namespace SubtitleComposer {
-class InputFormat : public Format
+#include "mplayer/mp_msg.h"
+#include "mplayer/vobsub.h"
+#include "mplayer/spudec.h"
+
+using namespace SubtitleComposer;
+
+VobSubInputInitDialog::VobSubInputInitDialog(void *vob, void *spu, QWidget *parent) :
+	QDialog(parent),
+	ui(new Ui::VobSubInputInitDialog),
+	m_vob(vob),
+	m_spu(spu)
 {
-public:
-	bool readSubtitle(Subtitle &subtitle, bool primary, const QString &data) const
-	{
-		Subtitle newSubtitle;
+	ui->setupUi(this);
 
-		if(!parseSubtitles(newSubtitle, data))
-			return false;
-
-		if(primary)
-			subtitle.setPrimaryData(newSubtitle, true);
-		else
-			subtitle.setSecondaryData(newSubtitle, true);
-
-		return true;
+	for(size_t i = 0; i < vobsub_get_indexes_count(m_vob); i++) {
+		char const *const id = vobsub_get_id(m_vob, i);
+		ui->comboStream->addItem(QString("Stream %1: %2").arg(i).arg(id ? id : "(no id)"));
 	}
-
-	virtual bool readBinary(Subtitle &, const QUrl &)
-	{
-		return false;
-	}
-
-protected:
-	virtual bool parseSubtitles(Subtitle &subtitle, const QString &data) const = 0;
-
-	InputFormat(const QString &name, const QStringList &extensions) : Format(name, extensions) {}
-};
 }
 
-#endif
+VobSubInputInitDialog::~VobSubInputInitDialog()
+{
+	delete ui;
+}
+
+
+int
+VobSubInputInitDialog::streamIndex() const
+{
+	return ui->comboStream->currentIndex();
+}
