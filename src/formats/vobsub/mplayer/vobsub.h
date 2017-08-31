@@ -52,6 +52,8 @@ void vobsub_out_close(void *me);
 int vobsub_set_from_lang(void *vobhandle, char const *lang); // R: changed lang from unsigned char*
 void vobsub_seek(void * vobhandle, float pts);
 
+int vobsub_get_packet_count(void *vobhandle);
+
 #ifdef __cplusplus
 }
 #endif
