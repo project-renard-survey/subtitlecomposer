@@ -428,13 +428,18 @@ VobSubInputProcessDialog::processCurrentPiece()
 	p.setPen(Qt::red);
 
 	QList<PiecePtr>::iterator i = m_pieceCurrent;
+	QRect rcVisible(QPoint((*i)->left, (*i)->top), QPoint((*i)->right, (*i)->bottom));
 	int n = (*i)->symbolCount;
 	while(n-- && i != m_pieces.end()) {
+		rcVisible |= QRect(QPoint((*i)->left, (*i)->top), QPoint((*i)->right, (*i)->bottom));
 		foreach(QPoint pix, (*i)->pixels)
 			p.drawPoint(pix);
 		++i;
 	}
-	ui->subtitleView->setPixmap(pixmap);
+	int w = (300 - rcVisible.width()) / 2;
+	int h = (100 - rcVisible.height()) / 2;
+	rcVisible.adjust(-w, -h, w, h);
+	ui->subtitleView->setPixmap(pixmap.copy(rcVisible));
 
 	ui->lineEdit->setFocus();
 
