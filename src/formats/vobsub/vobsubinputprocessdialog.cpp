@@ -32,6 +32,25 @@
 using namespace SubtitleComposer;
 
 // Private helper classes
+class VobSubInputProcessDialog::Frame : public QSharedData
+{
+public:
+	Frame() {}
+	Frame(const Frame &other) : QSharedData(other) {}
+	~Frame() {}
+
+	bool processPieces();
+
+	static unsigned spaceSum;
+	static unsigned spaceCount;
+
+	unsigned index;
+	QPixmap subPixmap;
+	Time subShowTime;
+	Time subHideTime;
+	QList<PiecePtr> pieces;
+};
+
 class VobSubInputProcessDialog::Piece : public QSharedData
 {
 public:
@@ -68,12 +87,12 @@ public:
 	inline bool operator==(const Piece &other) const;
 	inline Piece & operator+=(const Piece &other);
 
-
 	inline void normalize();
 
 	LinePtr line;
 	int top, left, bottom, right;
 	int symbolCount;
+	SString text;
 	QVector<QPoint> pixels;
 };
 
@@ -102,6 +121,93 @@ public:
 
 	int top, bottom;
 };
+
+unsigned VobSubInputProcessDialog::Frame::spaceSum;
+unsigned VobSubInputProcessDialog::Frame::spaceCount;
+
+bool
+VobSubInputProcessDialog::Frame::processPieces()
+{
+	QImage pieceBitmap = subPixmap.toImage();
+	int width = pieceBitmap.width();
+	int height = pieceBitmap.height();
+	int bgColor = pieceBitmap.pixel(0, 0);
+	int color;
+	PiecePtr piece;
+
+	pieces.clear();
+
+	// build piece by searching non-diagonal adjanced pixels, assigned pixels are
+	// removed from pieceBitmap
+	std::function<void(int,int)> cutPiece = [&](int x, int y){
+		if(piece->top > y)
+			piece->top = y;
+		if(piece->bottom < y)
+			piece->bottom = y;
+
+		if(piece->left > x)
+			piece->left = x;
+		if(piece->right < x)
+			piece->right = x;
+
+		piece->pixels.append(QPoint(x, y));
+		pieceBitmap.setPixel(x, y, bgColor);
+
+		if(x < width - 1 && qGray(pieceBitmap.pixel(x + 1, y)) > 127)
+			cutPiece(x + 1, y);
+		if(x > 0 && qGray(pieceBitmap.pixel(x - 1, y)) > 127)
+			cutPiece(x - 1, y);
+		if(y < height - 1 && qGray(pieceBitmap.pixel(x, y + 1)) > 127)
+			cutPiece(x, y + 1);
+		if(y > 0 && qGray(pieceBitmap.pixel(x, y - 1)) > 127)
+			cutPiece(x, y - 1);
+	};
+
+	// search pieces from top left
+	for(int y = 0; y < height; y++) {
+		for(int x = 0; x < width; x++) {
+			color = qGray(pieceBitmap.pixel(x, y));
+			if(color > 127) {
+				piece = new Piece(x, y);
+				cutPiece(x, y);
+				pieces.append(piece);
+			}
+		}
+	}
+
+	if(pieces.empty())
+		return false;
+
+	// figure out where the lines are
+	// TODO: fix accents of uppercase characters going into their own line, maybe merge
+	//       very short (below average height?) lines with closest adjanced line
+	QVector<LinePtr> lines;
+	foreach(piece, pieces) {
+		foreach(auto line, lines) {
+			if(line->contains(piece)) {
+				piece->line = line;
+				line->extend(piece->top, piece->bottom);
+				break;
+			}
+		}
+		if(!piece->line) {
+			piece->line = new Line(piece->top, piece->bottom);
+			lines.append(piece->line);
+		}
+	}
+
+	// sort pieces, line by line, left to right, comparison is done in Piece::operator<()
+	std::sort(pieces.begin(), pieces.end(), [](const PiecePtr &a, const PiecePtr &b)->bool{
+		return *a < *b;
+	});
+
+	foreach(piece, pieces) {
+		spaceSum += piece->right - piece->left;
+		spaceCount++;
+	}
+
+	return true;
+}
 
 inline bool
 VobSubInputProcessDialog::Piece::operator<(const Piece &other) const
@@ -160,11 +266,10 @@ VobSubInputProcessDialog::Piece::normalize()
 	top = left = 0;
 }
 
-// Piece compare function for QHash, used together with Piece::operator==()
 inline uint
 qHash(const VobSubInputProcessDialog::Piece &piece)
 {
-	// TODO: possibly implement better hashing algorithm
+	// ignore top and left since this is used on normalized pieces
 	return 1000 * piece.right * piece.bottom + piece.pixels.length();
 }
 
@@ -175,12 +280,7 @@ qHash(const VobSubInputProcessDialog::Piece &piece)
 VobSubInputProcessDialog::VobSubInputProcessDialog(Subtitle *subtitle, void *vob, void *spu, QWidget *parent) :
 	QDialog(parent),
 	ui(new Ui::VobSubInputProcessDialog),
-	m_vob(vob),
-	m_spu(spu),
 	m_subtitle(subtitle),
-	m_subLastStartPts(0),
-	m_subIndex(0),
-	m_spaceWidth(-1),
 	m_recognizedPiecesMaxSymbolLength(0)
 {
 	ui->setupUi(this);
@@ -209,9 +309,14 @@ VobSubInputProcessDialog::VobSubInputProcessDialog(Subtitle *subtitle, void *vob
 	ui->lineEdit->installEventFilter(this);
 	ui->lineEdit->setFocus();
 
+	Frame::spaceSum = Frame::spaceCount = 0;
+
 	ui->progressBar->setMinimum(0);
 	ui->progressBar->setValue(0);
-	ui->progressBar->setMaximum(vobsub_get_packet_count(m_vob));
+	processFrames(vob, spu);
+	ui->progressBar->setMaximum(m_frames.size());
+
+	m_spaceWidth = Frame::spaceSum / Frame::spaceCount;
 
 	processNextImage();
 }
@@ -269,37 +374,40 @@ VobSubInputProcessDialog::eventFilter(QObject *obj, QEvent *event) /*override*/
 }
 
 void
-VobSubInputProcessDialog::processNextImage()
+VobSubInputProcessDialog::processFrames(void *vob, void *spu)
 {
 	void *packet;
 	int timestamp;
 	int len;
+	unsigned lastStartPts = 0;
+	FramePtr frame;
+	unsigned index = 0;
 
-	while((len = vobsub_get_next_packet(m_vob, &packet, &timestamp)) > 0) {
-		ui->progressBar->setValue(ui->progressBar->value() + 1);
-
+	while((len = vobsub_get_next_packet(vob, &packet, &timestamp)) > 0) {
 		if(timestamp < 0)
 			continue;
 
-		spudec_assemble(m_spu, reinterpret_cast<unsigned char*>(packet), len, timestamp);
-		spudec_heartbeat(m_spu, timestamp);
+		frame = new Frame();
+		frame->index = index;
+
+		spudec_assemble(spu, reinterpret_cast<unsigned char*>(packet), len, timestamp);
+		spudec_heartbeat(spu, timestamp);
 
 		unsigned char const *image;
 		size_t image_size;
 		unsigned width, height, stride, start_pts, end_pts;
-		spudec_get_data(m_spu, &image, &image_size, &width, &height, &stride, &start_pts, &end_pts);
+		spudec_get_data(spu, &image, &image_size, &width, &height, &stride, &start_pts, &end_pts);
 
 		// skip this packet if it is another packet of a subtitle that was decoded from multiple mpeg packets.
-		if(start_pts == m_subLastStartPts)
+		if(start_pts == lastStartPts)
 			continue;
-		m_subLastStartPts = start_pts;
+		lastStartPts = start_pts;
 
 		if(static_cast<unsigned>(timestamp) != start_pts)
-			qWarning() << "VobSub Line " << m_subIndex << ": time stamp from .idx (" << timestamp << ") doesn't match time stamp from .sub (" << start_pts << ")\n";
+			qWarning() << "VobSub Line " << index << ": time stamp from .idx (" << timestamp << ") doesn't match time stamp from .sub (" << start_pts << ")\n";
 
-		m_subShowTime.setMillisTime((double)start_pts / 90.);
-		m_subHideTime.setMillisTime((double)end_pts / 90.);
-		m_subText.clear();
+		frame->subShowTime.setMillisTime((double)start_pts / 90.);
+		frame->subHideTime.setMillisTime((double)end_pts / 90.);
 
 		QByteArray pgmBuffer;
 		pgmBuffer
@@ -312,109 +420,36 @@ VobSubInputProcessDialog::processNextImage()
 				.append("\n")
 				.append(reinterpret_cast<const char *>(image), image_size);
 
-		if(!m_subPixmap.loadFromData(pgmBuffer)) {
-			qWarning() << "VobSub Line " << m_subIndex << ": Invalid pixmap - size: " << image_size << " bytes, " << width << "x" << height << " pixels\n";
+		if(!frame->subPixmap.loadFromData(pgmBuffer)) {
+			qWarning() << "VobSub Line " << index << ": Invalid pixmap - size: " << image_size << " bytes, " << width << "x" << height << " pixels\n";
 			continue;
 		}
-		ui->subtitleView->setPixmap(m_subPixmap);
 
-		m_subIndex++;
-
-		if(processPieces()) {
-			recognizePiece();
-			return;
+		if(frame->processPieces()) {
+			m_frames.append(frame);
+			index++;
 		}
 	}
 
-	accept();
+	m_frameCurrent = m_frames.begin() - 1;
 }
 
-bool
-VobSubInputProcessDialog::processPieces()
+void
+VobSubInputProcessDialog::processNextImage()
 {
-	QImage pieceBitmap = m_subPixmap.toImage();
-	int width = pieceBitmap.width();
-	int height = pieceBitmap.height();
-	int bgColor = pieceBitmap.pixel(0, 0);
-	int color;
-	PiecePtr piece;
-
-	m_pieces.clear();
-
-	// build piece by searching non-diagonal adjanced pixels, assigned pixels are
-	// removed from pieceBitmap
-	std::function<void(int,int)> cutPiece = [&](int x, int y){
-		if(piece->top > y)
-			piece->top = y;
-		if(piece->bottom < y)
-			piece->bottom = y;
-
-		if(piece->left > x)
-			piece->left = x;
-		if(piece->right < x)
-			piece->right = x;
-
-		piece->pixels.append(QPoint(x, y));
-		pieceBitmap.setPixel(x, y, bgColor);
-
-		if(x < width - 1 && qGray(pieceBitmap.pixel(x + 1, y)) > 127)
-			cutPiece(x + 1, y);
-		if(x > 0 && qGray(pieceBitmap.pixel(x - 1, y)) > 127)
-			cutPiece(x - 1, y);
-		if(y < height - 1 && qGray(pieceBitmap.pixel(x, y + 1)) > 127)
-			cutPiece(x, y + 1);
-		if(y > 0 && qGray(pieceBitmap.pixel(x, y - 1)) > 127)
-			cutPiece(x, y - 1);
-	};
-
-	// search pieces from top left
-	for(int y = 0; y < height; y++) {
-		for(int x = 0; x < width; x++) {
-			color = qGray(pieceBitmap.pixel(x, y));
-			if(color > 127) {
-				piece = new Piece(x, y);
-				cutPiece(x, y);
-				m_pieces.append(piece);
-			}
-		}
+	if(++m_frameCurrent == m_frames.end()) {
+		accept();
+		return;
 	}
 
-	if(m_pieces.empty())
-		return false;
+	ui->progressBar->setValue((*m_frameCurrent)->index + 1);
 
-	// figure out where the lines are
-	// TODO: fix accents of uppercase characters going into their own line, maybe merge
-	//       very short (below average height?) lines with closest adjanced line
-	QVector<LinePtr> lines;
-	foreach(piece, m_pieces) {
-		foreach(auto line, lines) {
-			if(line->contains(piece)) {
-				piece->line = line;
-				line->extend(piece->top, piece->bottom);
-				break;
-			}
-		}
-		if(!piece->line) {
-			piece->line = new Line(piece->top, piece->bottom);
-			lines.append(piece->line);
-		}
-	}
+	ui->subtitleView->setPixmap((*m_frameCurrent)->subPixmap);
 
-	// sort pieces, line by line, left to right, comparison is done in Piece::operator<()
-	std::sort(m_pieces.begin(), m_pieces.end(), [](const PiecePtr &a, const PiecePtr &b)->bool{
-		return *a < *b;
-	});
-
-	// TODO: improve whitespace calculation
-	if(m_spaceWidth < 0) {
-		m_spaceWidth = 0;
-		foreach(piece, m_pieces)
-			m_spaceWidth += piece->right - piece->left;
-		m_spaceWidth /= 2 * m_pieces.size();
-	}
-
+	m_pieces = (*m_frameCurrent)->pieces;
 	m_pieceCurrent = m_pieces.begin();
-	return true;
+
+	recognizePiece();
 }
 
 void
@@ -423,7 +458,7 @@ VobSubInputProcessDialog::processCurrentPiece()
 	if(m_pieceCurrent == m_pieces.end())
 		return;
 
-	QPixmap pixmap(m_subPixmap);
+	QPixmap pixmap((*m_frameCurrent)->subPixmap);
 	QPainter p(&pixmap);
 	p.setPen(Qt::red);
 
@@ -449,26 +484,32 @@ VobSubInputProcessDialog::processCurrentPiece()
 void
 VobSubInputProcessDialog::processNextPiece()
 {
-	auto piecePrev = m_pieceCurrent;
 	m_pieceCurrent += (*m_pieceCurrent)->symbolCount;
-
-	m_subText.append(currentText());
 
 	ui->lineEdit->clear();
 	ui->symbolCount->setValue(1);
 
 	if(m_pieceCurrent == m_pieces.end()) {
-		if(!m_subText.trimmed().isEmpty())
-			m_subtitle->insertLine(new SubtitleLine(m_subText, m_subShowTime, m_subHideTime));
+		SString subText;
+		PiecePtr piecePrev;
+		foreach(PiecePtr piece, m_pieces) {
+			if(piecePrev) {
+				if(!piecePrev->line->intersects(piece->line))
+					subText.append(QChar(QChar::LineFeed));
+				else if(piece->left - piecePrev->right > m_spaceWidth)
+					subText.append(QChar(QChar::Space));
+			}
+
+			subText += piece->text;
+			piecePrev = piece;
+		}
+
+		if(!subText.trimmed().isEmpty())
+			m_subtitle->insertLine(new SubtitleLine(subText, (*m_frameCurrent)->subShowTime, (*m_frameCurrent)->subHideTime));
 
 		processNextImage();
 		return;
 	}
-
-	if(!(*piecePrev)->line->intersects((*m_pieceCurrent)->line))
-		m_subText.append(QChar(QChar::LineFeed));
-	else if((*m_pieceCurrent)->left - (*piecePrev)->right > m_spaceWidth)
-		m_subText.append(QChar(QChar::Space));
 
 	recognizePiece();
 }
@@ -480,7 +521,7 @@ VobSubInputProcessDialog::recognizePiece()
 		PiecePtr normal = currentNormalizedPiece(len);
 		if(m_recognizedPieces.contains(*normal)) {
 			const SString text = m_recognizedPieces.value(*normal);
-			m_subText.append(text);
+			(*m_pieceCurrent)->text = text;
 			currentSymbolCountSet(len);
 			processNextPiece();
 			return;
@@ -548,8 +589,10 @@ VobSubInputProcessDialog::onOkClicked()
 	if((*m_pieceCurrent)->symbolCount > m_recognizedPiecesMaxSymbolLength)
 		m_recognizedPiecesMaxSymbolLength = (*m_pieceCurrent)->symbolCount;
 
+	(*m_pieceCurrent)->text = currentText();
+
 	PiecePtr normal = currentNormalizedPiece((*m_pieceCurrent)->symbolCount);
-	m_recognizedPieces[*normal] = currentText();
+	m_recognizedPieces[*normal] = (*m_pieceCurrent)->text;
 
 	processNextPiece();
 }

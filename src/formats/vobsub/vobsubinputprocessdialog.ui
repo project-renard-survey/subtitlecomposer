@@ -187,12 +187,12 @@
     <widget class="QWidget" name="widget" native="true">
      <layout class="QVBoxLayout" name="verticalLayout">
       <item>
-       <widget class="QPushButton" name="btnSkipLine">
+       <widget class="QPushButton" name="btnPrevImage">
         <property name="text">
-         <string>Skip Line</string>
+         <string>Prev Image</string>
         </property>
         <property name="icon">
-         <iconset theme="go-next">
+         <iconset theme="go-previous">
           <normaloff>.</normaloff>.</iconset>
         </property>
         <property name="autoDefault">
@@ -201,13 +201,12 @@
        </widget>
       </item>
       <item>
-       <widget class="QPushButton" name="btnSkipImage">
+       <widget class="QPushButton" name="btnPrevSymbol">
         <property name="text">
-         <string>Skip Image</string>
+         <string>Prev Symbol</string>
         </property>
         <property name="icon">
-         <iconset theme="go-next">
-          <normaloff>.</normaloff>.</iconset>
+         <iconset theme="go-previous"/>
         </property>
         <property name="autoDefault">
          <bool>false</bool>
@@ -253,8 +252,8 @@
   <tabstop>styleUnderline</tabstop>
   <tabstop>lineEdit</tabstop>
   <tabstop>btnOk</tabstop>
-  <tabstop>btnSkipLine</tabstop>
-  <tabstop>btnSkipImage</tabstop>
+  <tabstop>btnPrevImage</tabstop>
+  <tabstop>btnPrevSymbol</tabstop>
   <tabstop>btnAbort</tabstop>
  </tabstops>
  <resources/>

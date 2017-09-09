@@ -36,6 +36,8 @@ class VobSubInputProcessDialog : public QDialog
 	Q_OBJECT
 
 public:
+	class Frame;
+	typedef QExplicitlySharedDataPointer<Frame> FramePtr;
 	class Piece;
 	typedef QExplicitlySharedDataPointer<Piece> PiecePtr;
 	class Line;
@@ -54,8 +56,8 @@ private slots:
 private:
 	Ui::VobSubInputProcessDialog *ui;
 
+	void processFrames(void *vob, void *spu);
 	void processNextImage();
-	bool processPieces();
 	void processCurrentPiece();
 	void processNextPiece();
 	void recognizePiece();
@@ -64,16 +66,10 @@ private:
 	PiecePtr currentNormalizedPiece(int symbolCount);
 	void currentSymbolCountSet(int symbolCount);
 
-	void *m_vob;
-	void *m_spu;
+	QList<FramePtr> m_frames;
+	QList<FramePtr>::iterator m_frameCurrent;
 
 	Subtitle *m_subtitle;
-	QPixmap m_subPixmap;
-	SString m_subText;
-	Time m_subShowTime;
-	Time m_subHideTime;
-	unsigned m_subLastStartPts;
-	unsigned m_subIndex;
 
 	int m_spaceWidth;
 
