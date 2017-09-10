@@ -26,6 +26,7 @@
 #include <QRegExp>
 #include <QList>
 #include <QColor>
+#include <QDataStream>
 
 #include <QDebug>
 
@@ -178,6 +179,9 @@ public:
 	bool operator>(const QString &string) const;
 	bool operator>=(const SString &sstring) const;
 	bool operator>=(const QString &string) const;
+
+	friend inline QDataStream & operator<<(QDataStream &stream, const SString &string);
+	friend inline QDataStream & operator>>(QDataStream &stream, SString &string);
 
 private:
 	char * detachFlags();
@@ -524,5 +528,25 @@ SString::length(int index, int len) const
 {
 	return (len < 0) || ((index + len) > m_string.length()) ? m_string.length() - index : len;
 }
+
+inline QDataStream &
+operator<<(QDataStream &stream, const SubtitleComposer::SString &string) {
+	stream << string.m_string;
+	stream.writeRawData(string.m_styleFlags, string.m_string.length() * sizeof(*string.m_styleFlags));
+	stream.writeRawData(reinterpret_cast<const char *>(string.m_styleColors), string.m_string.length() * sizeof(*string.m_styleColors));
+
+	return stream;
 }
+
+inline QDataStream &
+operator>>(QDataStream &stream, SubtitleComposer::SString &string) {
+	stream >> string.m_string;
+	string.setMinFlagsCapacity(string.m_string.size());
+	stream.readRawData(string.m_styleFlags, string.m_string.length() * sizeof(*string.m_styleFlags));
+	stream.readRawData(reinterpret_cast<char *>(string.m_styleColors), string.m_string.length() * sizeof(*string.m_styleColors));
+
+	return stream;
+}
+}
+
 #endif

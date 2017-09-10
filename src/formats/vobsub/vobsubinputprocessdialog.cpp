@@ -29,6 +29,12 @@
 #include <QPainter>
 #include <QKeyEvent>
 
+#include <QFile>
+#include <QSaveFile>
+#include <QDataStream>
+
+#define VOBSUB_SYMBOL_FILE QStringLiteral("/home/max/killme-subtitlecomposer.dat")
+
 using namespace SubtitleComposer;
 
 // Private helper classes
@@ -86,6 +92,7 @@ public:
 	inline bool operator<(const Piece &other) const;
 	inline bool operator==(const Piece &other) const;
 	inline Piece & operator+=(const Piece &other);
+
 
 	inline void normalize();
 
@@ -250,6 +257,41 @@ VobSubInputProcessDialog::Piece::operator+=(const Piece &other)
 	return *this;
 }
 
+// write to QDataStream
+inline QDataStream &
+operator<<(QDataStream &stream, const SubtitleComposer::VobSubInputProcessDialog::Line &line) {
+	stream << line.top << line.bottom;
+	return stream;
+}
+
+inline QDataStream &
+operator<<(QDataStream &stream, const SubtitleComposer::VobSubInputProcessDialog::Piece &piece) {
+	stream << *piece.line;
+	stream << piece.top << piece.left << piece.bottom << piece.right;
+	stream << piece.symbolCount;
+	stream << piece.text;
+	stream << piece.pixels;
+	return stream;
+}
+
+// read from QDataStream
+inline QDataStream &
+operator>>(QDataStream &stream, SubtitleComposer::VobSubInputProcessDialog::Line &line) {
+	stream >> line.top >> line.bottom;
+	return stream;
+}
+
+inline QDataStream &
+operator>>(QDataStream &stream, SubtitleComposer::VobSubInputProcessDialog::Piece &piece) {
+	piece.line = new VobSubInputProcessDialog::Line(0, 0);
+	stream >> *piece.line;
+	stream >> piece.top >> piece.left >> piece.bottom >> piece.right;
+	stream >> piece.symbolCount;
+	stream >> piece.text;
+	stream >> piece.pixels;
+	return stream;
+}
+
 inline void
 VobSubInputProcessDialog::Piece::normalize()
 {
@@ -320,6 +362,26 @@ VobSubInputProcessDialog::VobSubInputProcessDialog(Subtitle *subtitle, void *vob
 	ui->progressBar->setMaximum(m_frames.size());
 
 	m_spaceWidth = Frame::spaceSum / Frame::spaceCount;
+
+#ifdef VOBSUB_SYMBOL_FILE
+	QFile file(VOBSUB_SYMBOL_FILE);
+	if(file.open(QIODevice::ReadOnly)) {
+		QDataStream stream(&file);
+		stream >> m_recognizedPieces;
+		stream >> m_recognizedPiecesMaxSymbolLength;
+		file.close();
+	}
+
+	connect(this, &QDialog::finished, [this](int){
+		QSaveFile file(VOBSUB_SYMBOL_FILE);
+		if(file.open(QIODevice::WriteOnly)) {
+			QDataStream stream(&file);
+			stream << m_recognizedPieces;
+			stream << m_recognizedPiecesMaxSymbolLength;
+			file.commit();
+		}
+	});
+#endif
 
 	processNextImage();
 }
