@@ -49,6 +49,7 @@ public:
 
 	static unsigned spaceSum;
 	static unsigned spaceCount;
+	static QMap<qint32, qint32> spaceStats;
 
 	unsigned index;
 	QPixmap subPixmap;
@@ -131,6 +132,7 @@ public:
 
 unsigned VobSubInputProcessDialog::Frame::spaceSum;
 unsigned VobSubInputProcessDialog::Frame::spaceCount;
+QMap<qint32, qint32> VobSubInputProcessDialog::Frame::spaceStats;
 
 bool
 VobSubInputProcessDialog::Frame::processPieces()
@@ -188,6 +190,8 @@ VobSubInputProcessDialog::Frame::processPieces()
 	// figure out where the lines are
 	// TODO: fix accents of uppercase characters going into their own line, maybe merge
 	//       very short (below average height?) lines with closest adjanced line
+	// TODO: find out where the baseline is, otherwise comma and apostrophe could end up
+	//       as same character
 	QVector<LinePtr> lines;
 	foreach(piece, pieces) {
 		foreach(auto line, lines) {
@@ -208,9 +212,18 @@ VobSubInputProcessDialog::Frame::processPieces()
 		return *a < *b;
 	});
 
+	PiecePtr prevPiece;
 	foreach(piece, pieces) {
-		spaceSum += piece->right - piece->left;
-		spaceCount++;
+		if(prevPiece && prevPiece->line == piece->line) {
+			spaceStats[piece->left - prevPiece->right]++;
+
+			spaceSum += piece->left - prevPiece->right;
+			spaceCount++;
+		}
+		prevPiece = piece;
+
+//		spaceSum += piece->right - piece->left;
+//		spaceCount++;
 	}
 
 	return true;
@@ -355,6 +368,7 @@ VobSubInputProcessDialog::VobSubInputProcessDialog(Subtitle *subtitle, void *vob
 	ui->lineEdit->setFocus();
 
 	Frame::spaceSum = Frame::spaceCount = 0;
+	Frame::spaceStats.clear();
 
 	ui->progressBar->setMinimum(0);
 	ui->progressBar->setValue(0);
@@ -362,6 +376,18 @@ VobSubInputProcessDialog::VobSubInputProcessDialog(Subtitle *subtitle, void *vob
 	ui->progressBar->setMaximum(m_frames.size());
 
 	m_spaceWidth = Frame::spaceSum / Frame::spaceCount;
+	qDebug() << "spaceStats:" << Frame::spaceStats;
+	qDebug() << "spaceCount:" << Frame::spaceCount;
+	// average word length = 5.1
+	qint32 wordCount = Frame::spaceCount / 5;
+	qDebug() << "wordCount:" << wordCount;
+	for(auto it = Frame::spaceStats.end() - 1; it != Frame::spaceStats.begin(); --it) {
+		wordCount -= it.value();
+		if(wordCount <= 0)
+			break;
+		m_spaceWidth = it.key();
+	}
+	qDebug() << "spaceWidth:" << m_spaceWidth;
 
 #ifdef VOBSUB_SYMBOL_FILE
 	QFile file(VOBSUB_SYMBOL_FILE);
