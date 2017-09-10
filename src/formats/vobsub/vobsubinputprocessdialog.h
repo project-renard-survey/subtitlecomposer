@@ -59,7 +59,7 @@ private:
 	Ui::VobSubInputProcessDialog *ui;
 
 	void processFrames(void *vob, void *spu);
-	void processNextImage();
+	Q_INVOKABLE void processNextImage();
 	void processCurrentPiece();
 	void processNextPiece();
 	void recognizePiece();

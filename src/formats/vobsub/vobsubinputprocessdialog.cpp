@@ -383,7 +383,11 @@ VobSubInputProcessDialog::VobSubInputProcessDialog(Subtitle *subtitle, void *vob
 	});
 #endif
 
-	processNextImage();
+	ui->grpText->setDisabled(true);
+	ui->btnPrevSymbol->setDisabled(true);
+	ui->btnPrevImage->setDisabled(true);
+	QMetaObject::invokeMethod(this, "processNextImage", Qt::QueuedConnection);
+//	processNextImage();
 }
 
 VobSubInputProcessDialog::~VobSubInputProcessDialog()
@@ -509,6 +513,11 @@ VobSubInputProcessDialog::processNextImage()
 
 	ui->progressBar->setValue((*m_frameCurrent)->index + 1);
 
+	QRect rcVisible((*m_frameCurrent)->subPixmap.rect());
+	rcVisible.setWidth(300);
+	rcVisible.setHeight(100);
+	ui->subtitleView->setPixmap((*m_frameCurrent)->subPixmap.copy(rcVisible));
+
 	m_pieces = (*m_frameCurrent)->pieces;
 	m_pieceCurrent = m_pieces.begin();
 
@@ -520,6 +529,10 @@ VobSubInputProcessDialog::processCurrentPiece()
 {
 	if(m_pieceCurrent == m_pieces.end())
 		return;
+
+	ui->grpText->setDisabled(false);
+	ui->btnPrevSymbol->setDisabled(false);
+	ui->btnPrevImage->setDisabled(false);
 
 	QPixmap pixmap((*m_frameCurrent)->subPixmap);
 	QPainter p(&pixmap);
@@ -569,7 +582,11 @@ VobSubInputProcessDialog::processNextPiece()
 
 		m_subtitle->insertLine(new SubtitleLine(subText, (*m_frameCurrent)->subShowTime, (*m_frameCurrent)->subHideTime));
 
-		processNextImage();
+		ui->grpText->setDisabled(true);
+		ui->btnPrevSymbol->setDisabled(true);
+		ui->btnPrevImage->setDisabled(true);
+		QMetaObject::invokeMethod(this, "processNextImage", Qt::QueuedConnection);
+//		processNextImage();
 		return;
 	}
 
