@@ -51,6 +51,8 @@ public:
 private slots:
 	void onOkClicked();
 	void onAbortClicked();
+	void onPrevImageClicked();
+	void onPrevSymbolClicked();
 	void onSymbolCountChanged(int symbolCount);
 
 private:

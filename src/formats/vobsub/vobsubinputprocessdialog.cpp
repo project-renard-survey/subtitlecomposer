@@ -306,6 +306,9 @@ VobSubInputProcessDialog::VobSubInputProcessDialog(Subtitle *subtitle, void *vob
 
 	connect(ui->symbolCount, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, &VobSubInputProcessDialog::onSymbolCountChanged);
 
+	connect(ui->btnPrevSymbol, &QPushButton::clicked, this, &VobSubInputProcessDialog::onPrevSymbolClicked);
+	connect(ui->btnPrevImage, &QPushButton::clicked, this, &VobSubInputProcessDialog::onPrevImageClicked);
+
 	ui->lineEdit->installEventFilter(this);
 	ui->lineEdit->setFocus();
 
@@ -444,8 +447,6 @@ VobSubInputProcessDialog::processNextImage()
 
 	ui->progressBar->setValue((*m_frameCurrent)->index + 1);
 
-	ui->subtitleView->setPixmap((*m_frameCurrent)->subPixmap);
-
 	m_pieces = (*m_frameCurrent)->pieces;
 	m_pieceCurrent = m_pieces.begin();
 
@@ -504,8 +505,7 @@ VobSubInputProcessDialog::processNextPiece()
 			piecePrev = piece;
 		}
 
-		if(!subText.trimmed().isEmpty())
-			m_subtitle->insertLine(new SubtitleLine(subText, (*m_frameCurrent)->subShowTime, (*m_frameCurrent)->subHideTime));
+		m_subtitle->insertLine(new SubtitleLine(subText, (*m_frameCurrent)->subShowTime, (*m_frameCurrent)->subHideTime));
 
 		processNextImage();
 		return;
@@ -601,4 +601,43 @@ void
 VobSubInputProcessDialog::onAbortClicked()
 {
 	reject();
+}
+
+void
+VobSubInputProcessDialog::onPrevImageClicked()
+{
+	if(m_frameCurrent == m_frames.begin())
+		return;
+
+	--m_frameCurrent;
+	m_subtitle->removeLines(RangeList(Range(m_subtitle->lastIndex())), Subtitle::Both);
+
+	ui->progressBar->setValue((*m_frameCurrent)->index + 1);
+
+	m_pieces = (*m_frameCurrent)->pieces;
+	m_pieceCurrent = m_pieces.end();
+
+	onPrevSymbolClicked();
+}
+
+void
+VobSubInputProcessDialog::onPrevSymbolClicked()
+{
+	do {
+		if(m_pieceCurrent == m_pieces.begin())
+			return onPrevImageClicked();
+		--m_pieceCurrent;
+	} while((*m_pieceCurrent)->symbolCount == 0);
+
+	processCurrentPiece();
+
+	ui->lineEdit->setText((*m_pieceCurrent)->text.string());
+	ui->lineEdit->selectAll();
+
+	int style = (*m_pieceCurrent)->text.styleFlagsAt(0);
+	ui->styleBold->setChecked((style & SString::Bold) != 0);
+	ui->styleItalic->setChecked((style & SString::Italic) != 0);
+	ui->styleUnderline->setChecked((style & SString::Underline) != 0);
+
+	ui->symbolCount->setValue((*m_pieceCurrent)->symbolCount);
 }
