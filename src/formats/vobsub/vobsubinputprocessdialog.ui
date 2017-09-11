@@ -64,7 +64,7 @@
          <item>
           <widget class="QLabel" name="symbolLabel">
            <property name="text">
-            <string>Symbo&amp;ls:</string>
+            <string>S&amp;ymbols:</string>
            </property>
            <property name="buddy">
             <cstring>symbolCount</cstring>
@@ -73,6 +73,9 @@
          </item>
          <item>
           <widget class="QSpinBox" name="symbolCount">
+           <property name="toolTip">
+            <string>Up/Down: change value</string>
+           </property>
            <property name="minimum">
             <number>1</number>
            </property>
@@ -96,6 +99,9 @@
          </item>
          <item>
           <widget class="QPushButton" name="styleBold">
+           <property name="toolTip">
+            <string>Ctrl+B</string>
+           </property>
            <property name="icon">
             <iconset theme="format-text-bold">
              <normaloff>.</normaloff>.</iconset>
@@ -113,6 +119,9 @@
          </item>
          <item>
           <widget class="QPushButton" name="styleItalic">
+           <property name="toolTip">
+            <string>Ctrl+I</string>
+           </property>
            <property name="icon">
             <iconset theme="format-text-italic">
              <normaloff>.</normaloff>.</iconset>
@@ -130,6 +139,9 @@
          </item>
          <item>
           <widget class="QPushButton" name="styleUnderline">
+           <property name="toolTip">
+            <string>Ctrl+U</string>
+           </property>
            <property name="icon">
             <iconset theme="format-text-underline">
              <normaloff>.</normaloff>.</iconset>
@@ -202,6 +214,9 @@
       </item>
       <item>
        <widget class="QPushButton" name="btnPrevSymbol">
+        <property name="toolTip">
+         <string>Ctrl+Left</string>
+        </property>
         <property name="text">
          <string>Prev Symbol</string>
         </property>

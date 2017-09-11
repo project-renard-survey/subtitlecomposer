@@ -464,6 +464,12 @@ VobSubInputProcessDialog::eventFilter(QObject *obj, QEvent *event) /*override*/
 			ui->symbolCount->setValue(ui->symbolCount->value() - ui->symbolCount->singleStep());
 			return true;
 
+		case Qt::Key_Left:
+			if((keyEvent->modifiers() & Qt::ControlModifier) == 0)
+				break;
+			QMetaObject::invokeMethod(this, "onPrevSymbolClicked", Qt::QueuedConnection);
+			return true;
+
 		case Qt::Key_Space:
 		case Qt::Key_Escape:
 			return true;
