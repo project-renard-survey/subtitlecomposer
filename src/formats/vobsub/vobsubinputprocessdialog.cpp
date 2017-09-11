@@ -51,7 +51,7 @@ public:
 	static unsigned spaceCount;
 	static QMap<qint32, qint32> spaceStats;
 
-	unsigned index;
+	quint32 index;
 	QPixmap subPixmap;
 	Time subShowTime;
 	Time subHideTime;
@@ -98,8 +98,8 @@ public:
 	inline void normalize();
 
 	LinePtr line;
-	int top, left, bottom, right;
-	int symbolCount;
+	qint32 top, left, bottom, right;
+	qint32 symbolCount;
 	SString text;
 	QVector<QPoint> pixels;
 };
@@ -127,7 +127,8 @@ public:
 			this->bottom = bottom;
 	}
 
-	int top, bottom;
+	qint32 top, bottom;
+	qint16 baseline;
 };
 
 unsigned VobSubInputProcessDialog::Frame::spaceSum;
@@ -190,8 +191,6 @@ VobSubInputProcessDialog::Frame::processPieces()
 	// figure out where the lines are
 	// TODO: fix accents of uppercase characters going into their own line, maybe merge
 	//       very short (below average height?) lines with closest adjanced line
-	// TODO: find out where the baseline is, otherwise comma and apostrophe could end up
-	//       as same character
 	QVector<LinePtr> lines;
 	foreach(piece, pieces) {
 		foreach(auto line, lines) {
@@ -205,6 +204,24 @@ VobSubInputProcessDialog::Frame::processPieces()
 			piece->line = new Line(piece->top, piece->bottom);
 			lines.append(piece->line);
 		}
+	}
+	// find out where the symbol baseline is, using most frequent bottom coordinate,
+	// otherwise comma and apostrophe could be recognized as same character
+	QHash<LinePtr, QHash<qint16, qint16>> bottomCount;
+	foreach(piece, pieces)
+		bottomCount[piece->line][piece->bottom]++;
+	foreach(LinePtr line, lines) {
+		qint16 max = 0;
+		for(auto i = bottomCount[line].cbegin(); i != bottomCount[line].cend(); ++i) {
+			if(i.value() > max) {
+				max = i.value();
+				line->baseline = i.key();
+			}
+		}
+	}
+	foreach(piece, pieces) {
+		if(piece->bottom < piece->line->baseline)
+			piece->bottom = piece->line->baseline;
 	}
 
 	// sort pieces, line by line, left to right, comparison is done in Piece::operator<()
@@ -227,6 +244,12 @@ VobSubInputProcessDialog::Frame::processPieces()
 	}
 
 	return true;
+}
+
+inline bool
+operator<(const VobSubInputProcessDialog::LinePtr &a, const VobSubInputProcessDialog::LinePtr &b)
+{
+	return a->top < b->top;
 }
 
 inline bool
@@ -562,15 +585,17 @@ VobSubInputProcessDialog::processCurrentPiece()
 
 	QPixmap pixmap((*m_frameCurrent)->subPixmap);
 	QPainter p(&pixmap);
-	p.setPen(Qt::red);
 
 	QList<PiecePtr>::iterator i = m_pieceCurrent;
 	QRect rcVisible(QPoint((*i)->left, (*i)->top), QPoint((*i)->right, (*i)->bottom));
 	int n = (*i)->symbolCount;
 	while(n-- && i != m_pieces.end()) {
+		p.setPen(QColor(255, 0, 0, 200));
 		rcVisible |= QRect(QPoint((*i)->left, (*i)->top), QPoint((*i)->right, (*i)->bottom));
 		foreach(QPoint pix, (*i)->pixels)
 			p.drawPoint(pix);
+		p.setPen(QColor(255, 255, 255, 64));
+		p.drawLine(0, (*i)->line->baseline, pixmap.width(), (*i)->line->baseline);
 		++i;
 	}
 	int w = (300 - rcVisible.width()) / 2;

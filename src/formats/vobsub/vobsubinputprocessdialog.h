@@ -73,13 +73,13 @@ private:
 
 	Subtitle *m_subtitle;
 
-	int m_spaceWidth;
+	qint32 m_spaceWidth;
 
 	QList<PiecePtr> m_pieces;
 	QList<PiecePtr>::iterator m_pieceCurrent;
 
 	QHash<Piece, SString> m_recognizedPieces;
-	int m_recognizedPiecesMaxSymbolLength;
+	qint32 m_recognizedPiecesMaxSymbolLength;
 };
 }
 
